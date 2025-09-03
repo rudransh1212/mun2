@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live MUN Debate</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        'brand-primary': '#5D1A1A',
+                        'brand-accent': '#A14444',
+                        'brand-highlight': '#EADDCF',
+                        'brand-bg': '#F9F8F6',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        #chat-window {
+            scroll-behavior: smooth;
+        }
+        .chat-bubble { @apply p-3 rounded-lg max-w-xl break-words; }
+        .delegate-bubble { @apply bg-brand-accent text-white self-end rounded-br-none; }
+        .judge-bubble { @apply bg-white text-gray-800 self-start shadow-sm rounded-bl-none; }
+        .system-bubble { @apply text-center self-center text-sm text-gray-500 italic my-2; }
+    </style>
+</head>
+<body class="bg-brand-bg font-sans">
+    <div id="app-container" class="w-full h-screen flex flex-col md:flex-row">
+
+        <!-- Role Selection Modal -->
+        <div id="role-modal" class="absolute inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+            <div class="bg-white p-8 rounded-lg shadow-xl text-center w-full max-w-md">
+                <h1 class="text-2xl font-bold text-brand-primary mb-4">Join the Debate</h1>
+                <p class="text-gray-600 mb-6">Please select your role to enter.</p>
+                <div class="flex space-x-4">
+                    <button id="join-judge" class="flex-1 bg-brand-primary text-white font-bold py-3 px-6 rounded-lg hover:bg-opacity-90 transition-all">Join as Judge</button>
+                    <button id="join-delegate" class="flex-1 bg-brand-accent text-white font-bold py-3 px-6 rounded-lg hover:bg-opacity-90 transition-all">Join as Delegate</button>
+                </div>
+                <p id="join-error" class="text-red-500 text-sm mt-4 h-4"></p>
+            </div>
+        </div>
+
+        <!-- Main App (Hidden by default) -->
+        <div id="main-app" class="w-full h-screen flex-col md:flex-row hidden">
+            <!-- Left Panel: Chat -->
+            <div class="flex-grow flex flex-col h-1/2 md:h-full">
+                <header class="bg-white p-4 border-b border-gray-200 shadow-sm">
+                    <h1 class="text-xl font-bold text-brand-primary">Model UN Debate Chamber</h1>
+                    <p class="text-sm text-gray-500">Your User ID: <span id="user-id-display" class="font-mono"></span></p>
+                </header>
+                <div id="chat-window" class="flex-grow p-6 space-y-4 overflow-y-auto flex flex-col">
+                    <!-- Messages will be injected here -->
+                </div>
+                <div id="chat-input-area" class="p-4 bg-white border-t border-gray-200">
+                    <div class="flex items-center space-x-2">
+                        <textarea id="message-input" placeholder="Enter your speech or message..." class="w-full p-2 border border-gray-300 rounded-lg focus:ring-brand-accent focus:border-brand-accent" rows="1" disabled></textarea>
+                        <button id="send-button" class="bg-brand-accent text-white p-2 rounded-full hover:bg-opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel: Controls & Status -->
+            <div id="controls-panel" class="w-full md:w-96 bg-white border-l border-gray-200 p-6 flex flex-col h-1/2 md:h-full overflow-y-auto">
+                <h2 class="text-lg font-bold text-brand-primary border-b pb-2 mb-4">Status & Controls</h2>
+                <div class="bg-gray-100 p-3 rounded-lg mb-4">
+                    <h3 class="font-semibold text-gray-800">Current Speaker:</h3>
+                    <p id="current-speaker-status" class="text-center font-mono text-brand-accent font-semibold p-2 bg-white rounded mt-1">None</p>
+                </div>
+                
+                 <div id="participants-section" class="mb-4">
+                    <h3 class="font-semibold text-gray-700">Participants Online:</h3>
+                    <ul id="participants-list" class="mt-2 text-sm text-gray-600 list-inside">
+                        <li class="p-1 text-gray-500">Connecting...</li>
+                    </ul>
+                </div>
+
+                <!-- Judge Controls -->
+                <div id="judge-controls" class="hidden space-y-4">
+                    <div>
+                        <button id="start-debate-btn" class="w-full bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700">Start / Reset Debate</button>
+                    </div>
+                    <div id="speaker-queue-section" class="pt-2">
+                        <h3 class="font-semibold text-gray-700">Speaker Queue:</h3>
+                        <ul id="speaker-queue-list" class="mt-2 text-sm text-gray-600 list-inside"></ul>
+                    </div>
+                     <div id="point-requests-section" class="pt-2">
+                        <h3 class="font-semibold text-gray-700">Point of Information Requests:</h3>
+                        <ul id="point-requests-list" class="mt-2 text-sm text-gray-600 list-inside"></ul>
+                    </div>
+                     <div>
+                        <button id="yield-floor-btn" class="w-full bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-gray-600">Yield Floor to Judge</button>
+                    </div>
+                </div>
+
+                <!-- Delegate Controls -->
+                <div id="delegate-controls" class="hidden space-y-3">
+                     <button id="request-speak-btn" class="w-full bg-brand-primary text-white font-semibold py-2 px-4 rounded-lg hover:bg-opacity-90">Request to Speak</button>
+                     <button id="request-point-btn" class="w-full bg-brand-accent text-white font-semibold py-2 px-4 rounded-lg hover:bg-opacity-90 disabled:opacity-50 disabled:cursor-not-allowed" disabled>Request Point of Information</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, addDoc, query, orderBy, serverTimestamp, updateDoc, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getDatabase, ref, onValue, set, onDisconnect } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
+
+        // --- Firebase Setup (Uses global variables if available) ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-mun-app';
+        
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+           apiKey: "AIzaSyAHOHp-7ogb-ITApm2Jmtd1TUPEBOSbQU8",
+      authDomain: "muniverse-23adb.firebaseapp.com",
+      projectId: "muniverse-23adb",
+      storageBucket: "muniverse-23adb.appspot.com",
+      messagingSenderId: "592528557752",
+      appId: "1:592528557752:web:85ea669fc5398a9628d64d",
+      databaseURL:"https://muniverse-23adb-default-rtdb.asia-southeast1.firebasedatabase.app/"
+        };
+        
+        // --- App State ---
+        let app, auth, db, rtdb;
+        let currentUser = null;
+        let userRole = null; 
+
+        // --- DOM Elements ---
+        const roleModal = document.getElementById('role-modal');
+        const mainApp = document.getElementById('main-app');
+        const chatWindow = document.getElementById('chat-window');
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-button');
+        const judgeControls = document.getElementById('judge-controls');
+        const delegateControls = document.getElementById('delegate-controls');
+        const joinError = document.getElementById('join-error');
+        const currentSpeakerStatus = document.getElementById('current-speaker-status');
+        const speakerQueueList = document.getElementById('speaker-queue-list');
+        const pointRequestsList = document.getElementById('point-requests-list');
+        const participantsList = document.getElementById('participants-list');
+        
+        async function join(role) {
+            try {
+                if (!app) {
+                     if (firebaseConfig.projectId === "PASTE_YOUR_PROJECT_ID_HERE" || !firebaseConfig.projectId) {
+                         joinError.textContent = "Firebase is not configured. Please add your config.";
+                         return;
+                    }
+                    if (firebaseConfig.databaseURL === "PASTE_YOUR_DATABASE_URL_HERE" || !firebaseConfig.databaseURL) {
+                         joinError.textContent = "Realtime Database URL is missing from the config.";
+                         return;
+                    }
+                    app = initializeApp(firebaseConfig);
+                    auth = getAuth(app);
+                    db = getFirestore(app);
+                    rtdb = getDatabase(app);
+                }
+                
+                if (!auth.currentUser) {
+                     const userCredential = typeof __initial_auth_token !== 'undefined'
+                        ? await signInWithCustomToken(auth, __initial_auth_token)
+                        : await signInAnonymously(auth);
+                    currentUser = userCredential.user;
+                } else {
+                    currentUser = auth.currentUser;
+                }
+                
+                userRole = role;
+                roleModal.style.display = 'none';
+                mainApp.classList.remove('hidden');
+                mainApp.classList.add('flex');
+                
+                if (userRole === 'judge') {
+                    judgeControls.classList.remove('hidden');
+                } else {
+                    delegateControls.classList.remove('hidden');
+                }
+                initApp();
+            } catch (error) {
+                console.error("Join/Authentication failed:", error);
+                joinError.textContent = "Could not connect. Check Firebase setup and security rules.";
+            }
+        }
+        
+        function initApp() {
+            document.getElementById('user-id-display').textContent = currentUser.uid.substring(0, 8);
+            
+            setupPresence();
+            
+            const messagesRef = collection(db, `/artifacts/${appId}/public/data/mun-chat/messages`);
+            const debateStateRef = doc(db, `/artifacts/${appId}/public/data/mun-chat/debateState`);
+
+            const q = query(messagesRef, orderBy("timestamp"));
+            onSnapshot(q, (snapshot) => {
+                snapshot.docChanges().forEach((change) => {
+                    if (change.type === "added") renderMessage(change.doc.data());
+                });
+            });
+
+            onSnapshot(debateStateRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    updateUIFromState(docSnap.data());
+                } else if (userRole === 'judge') {
+                    setDoc(debateStateRef, { currentSpeaker: null, pointSpeaker: null, speakerQueue: [], pointRequests: [] });
+                }
+            });
+            setupActionListeners();
+        }
+
+        function setupPresence() {
+            const myStatusRef = ref(rtdb, `/artifacts/${appId}/public/status/${currentUser.uid}`);
+            set(myStatusRef, { role: userRole, online: true });
+            onDisconnect(myStatusRef).remove();
+            
+            const connectedUsersRef = ref(rtdb, `/artifacts/${appId}/public/status`);
+            onValue(connectedUsersRef, (snapshot) => {
+                const users = snapshot.val();
+                participantsList.innerHTML = '';
+                if (users) {
+                    Object.entries(users).forEach(([uid, status]) => {
+                        const li = document.createElement('li');
+                        li.className = 'p-1';
+                        li.textContent = `${status.role.charAt(0).toUpperCase() + status.role.slice(1)} ${uid.substring(0,8)}`;
+                        if (status.role === 'judge') li.classList.add('font-bold');
+                        participantsList.appendChild(li);
+                    });
+                } else {
+                    participantsList.innerHTML = '<li class="p-1 text-gray-500">No one is online.</li>';
+                }
+            });
+        }
+        
+        function updateUIFromState(state) {
+            const hasFloor = (state.currentSpeaker === currentUser.uid) || (state.pointSpeaker === currentUser.uid);
+            messageInput.disabled = !hasFloor && userRole !== 'judge';
+            sendButton.disabled = !hasFloor && userRole !== 'judge';
+            
+            if(state.currentSpeaker) {
+                currentSpeakerStatus.textContent = `Delegate ${state.currentSpeaker.substring(0,8)}`;
+                if(state.pointSpeaker) {
+                    currentSpeakerStatus.innerHTML += `<br><span class="text-sm font-normal">(Yielded to Delegate ${state.pointSpeaker.substring(0,8)} for a point)</span>`;
+                }
+            } else {
+                 currentSpeakerStatus.textContent = 'Floor is open.';
+            }
+
+            if (userRole === 'delegate') {
+                const canRequestPoint = state.currentSpeaker && state.currentSpeaker !== currentUser.uid && !state.pointSpeaker;
+                document.getElementById('request-point-btn').disabled = !canRequestPoint;
+            }
+
+            if(userRole === 'judge') {
+                speakerQueueList.innerHTML = '';
+                if(state.speakerQueue?.length > 0) {
+                    state.speakerQueue.forEach(uid => {
+                        const li = document.createElement('li');
+                        li.className = 'flex justify-between items-center p-1';
+                        li.textContent = `Delegate ${uid.substring(0, 8)}`;
+                        const btn = document.createElement('button');
+                        btn.textContent = 'Set Speaker';
+                        btn.className = 'text-xs bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600';
+                        btn.onclick = () => setSpeaker(uid);
+                        li.appendChild(btn);
+                        speakerQueueList.appendChild(li);
+                    });
+                } else {
+                     speakerQueueList.innerHTML = '<li class="p-1 text-gray-500">Queue is empty.</li>';
+                }
+
+                pointRequestsList.innerHTML = '';
+                 if(state.pointRequests?.length > 0) {
+                    state.pointRequests.forEach(uid => {
+                        const li = document.createElement('li');
+                        li.className = 'flex justify-between items-center p-1';
+                        li.textContent = `Delegate ${uid.substring(0, 8)}`;
+                        const btn = document.createElement('button');
+                        btn.textContent = 'Grant Point';
+                        btn.className = 'text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600';
+                        btn.onclick = () => grantPoint(uid);
+                        li.appendChild(btn);
+                        pointRequestsList.appendChild(li);
+                    });
+                } else {
+                    pointRequestsList.innerHTML = '<li class="p-1 text-gray-500">No requests.</li>';
+                }
+            }
+        }
+
+        function renderMessage(data) {
+            const messageWrapper = document.createElement('div');
+            messageWrapper.className = 'flex flex-col';
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `chat-bubble ${data.role === 'judge' ? 'judge-bubble' : data.role === 'delegate' ? 'delegate-bubble' : 'system-bubble'}`;
+            if (data.role !== 'system') {
+                const senderP = document.createElement('p');
+                senderP.className = 'text-xs font-bold opacity-70 mb-1';
+                senderP.textContent = `${data.role.charAt(0).toUpperCase() + data.role.slice(1)} ${data.senderId.substring(0, 8)}`;
+                messageDiv.appendChild(senderP);
+            }
+            const contentP = document.createElement('p');
+            contentP.textContent = data.text;
+            messageDiv.appendChild(contentP);
+            messageWrapper.appendChild(messageDiv);
+            chatWindow.appendChild(messageWrapper);
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+        }
+
+        async function sendMessage() {
+            const text = messageInput.value.trim();
+            if (text && currentUser) {
+                const messagesRef = collection(db, `/artifacts/${appId}/public/data/mun-chat/messages`);
+                await addDoc(messagesRef, { text, senderId: currentUser.uid, role: userRole, timestamp: serverTimestamp() });
+                messageInput.value = '';
+                if (userRole === 'delegate' && document.getElementById('current-speaker-status').textContent.includes('Yielded')) {
+                    const debateStateRef = doc(db, `/artifacts/${appId}/public/data/mun-chat/debateState`);
+                    await updateDoc(debateStateRef, { pointSpeaker: null });
+                     addDoc(messagesRef, { text: `Delegate ${currentUser.uid.substring(0,8)} has concluded their point. The floor returns to the current speaker.`, role: 'system', timestamp: serverTimestamp() });
+                }
+            }
+        }
+        
+        async function handleDbAction(action, errorMessage) {
+            try {
+                await action();
+            } catch (error) {
+                console.error(errorMessage, error);
+                alert(`${errorMessage}. Check console and Firebase Rules.`);
+            }
+        }
+
+        // --- Judge Actions ---
+        function setSpeaker(uid) {
+            handleDbAction(async () => {
+                const debateStateRef = doc(db, `/artifacts/${appId}/public/data/mun-chat/debateState`);
+                const messagesRef = collection(db, `/artifacts/${appId}/public/data/mun-chat/messages`);
+                await updateDoc(debateStateRef, { currentSpeaker: uid, speakerQueue: arrayRemove(uid), pointSpeaker: null });
+                await addDoc(messagesRef, { text: `The Judge recognizes Delegate ${uid.substring(0,8)}. You have the floor.`, role: 'system', timestamp: serverTimestamp() });
+            }, "Error setting speaker");
+        }
+        function grantPoint(uid) {
+            handleDbAction(async () => {
+                const debateStateRef = doc(db, `/artifacts/${appId}/public/data/mun-chat/debateState`);
+                const messagesRef = collection(db, `/artifacts/${appId}/public/data/mun-chat/messages`);
+                await updateDoc(debateStateRef, { pointSpeaker: uid, pointRequests: arrayRemove(uid) });
+                await addDoc(messagesRef, { text: `The current speaker yields to Delegate ${uid.substring(0,8)} for a point of information.`, role: 'system', timestamp: serverTimestamp() });
+            }, "Error granting point");
+        }
+        function yieldFloor() {
+            handleDbAction(async () => {
+                const debateStateRef = doc(db, `/artifacts/${appId}/public/data/mun-chat/debateState`);
+                const messagesRef = collection(db, `/artifacts/${appId}/public/data/mun-chat/messages`);
+                await updateDoc(debateStateRef, { currentSpeaker: null, pointSpeaker: null });
+                await addDoc(messagesRef, { text: "The floor has been yielded back to the Judge.", role: 'system', timestamp: serverTimestamp() });
+            }, "Error yielding floor");
+        }
+
+        // --- Delegate Actions ---
+        function requestToSpeak() {
+            handleDbAction(async () => {
+                const debateStateRef = doc(db, `/artifacts/${appId}/public/data/mun-chat/debateState`);
+                await updateDoc(debateStateRef, { speakerQueue: arrayUnion(currentUser.uid) });
+                alert("You have been added to the speaker queue.");
+            }, "Error requesting to speak");
+        }
+        function requestPoint() {
+            handleDbAction(async () => {
+                const debateStateRef = doc(db, `/artifacts/${appId}/public/data/mun-chat/debateState`);
+                await updateDoc(debateStateRef, { pointRequests: arrayUnion(currentUser.uid) });
+                alert("Your request for a point of information has been noted.");
+            }, "Error requesting point");
+        }
+        
+        function setupActionListeners() {
+            sendButton.addEventListener('click', sendMessage);
+            messageInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            });
+
+            if(userRole === 'judge') {
+                document.getElementById('start-debate-btn').addEventListener('click', () => {
+                    handleDbAction(async () => {
+                        const debateStateRef = doc(db, `/artifacts/${appId}/public/data/mun-chat/debateState`);
+                        const messagesRef = collection(db, `/artifacts/${appId}/public/data/mun-chat/messages`);
+                        await setDoc(debateStateRef, { currentSpeaker: null, pointSpeaker: null, speakerQueue: [], pointRequests: [] });
+                        await addDoc(messagesRef, { text: "The Judge has started the debate. Delegates may request to speak.", role: 'system', timestamp: serverTimestamp() });
+                    }, "Error starting debate");
+                });
+                document.getElementById('yield-floor-btn').addEventListener('click', yieldFloor);
+            } else {
+                 document.getElementById('request-speak-btn').addEventListener('click', requestToSpeak);
+                 document.getElementById('request-point-btn').addEventListener('click', requestPoint);
+            }
+        }
+        
+        // --- Initial Load ---
+        document.getElementById('join-judge').addEventListener('click', () => join('judge'));
+        document.getElementById('join-delegate').addEventListener('click', () => join('delegate'));
+
+    </script>
+</body>
+</html>
+```
+
+### Final Step: Update Your Firestore Rules
+
+To ensure all the buttons work correctly, you need to apply the correct security rules to your **Firestore Database**.
+
+1.  In your Firebase project, go to **Build > Firestore Database**.
+2.  Select the **"Rules"** tab.
+3.  Replace the existing rules with the following code and click **"Publish"**:
+
+```json
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow any authenticated user to read/write to the public MUN chat data.
+    match /artifacts/{appId}/public/data/mun-chat/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
+
