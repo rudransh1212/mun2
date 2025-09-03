@@ -130,13 +130,13 @@
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-mun-app';
         
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
-             apiKey: "AIzaSyAHOHp-7ogb-ITApm2Jmtd1TUPEBOSbQU8",
-      authDomain: "muniverse-23adb.firebaseapp.com",
-      projectId: "muniverse-23adb",
-      storageBucket: "muniverse-23adb.appspot.com",
-      messagingSenderId: "592528557752",
-      appId: "1:592528557752:web:85ea669fc5398a9628d64d",
-      databaseURL:"https://muniverse-23adb-default-rtdb.asia-southeast1.firebasedatabase.app/"
+            apiKey: "PASTE_YOUR_API_KEY_HERE",
+            authDomain: "PASTE_YOUR_AUTH_DOMAIN_HERE",
+            databaseURL: "PASTE_YOUR_DATABASE_URL_HERE",
+            projectId: "PASTE_YOUR_PROJECT_ID_HERE",
+            storageBucket: "PASTE_YOUR_STORAGE_BUCKET_HERE",
+            messagingSenderId: "PASTE_YOUR_SENDER_ID_HERE",
+            appId: "PASTE_YOUR_APP_ID_HERE"
         };
         
         // --- App State ---
@@ -196,17 +196,17 @@
                 } else {
                     delegateControls.classList.remove('hidden');
                 }
-                initApp();
+                initApp(db, rtdb);
             } catch (error) {
                 console.error("Join/Authentication failed:", error);
                 joinError.textContent = "Could not connect. Check Firebase setup and security rules.";
             }
         }
         
-        function initApp() {
+        function initApp(db, rtdb) {
             document.getElementById('user-id-display').textContent = currentUser.uid.substring(0, 8);
             
-            setupPresence();
+            setupPresence(rtdb);
             
             const messagesRef = collection(db, `/artifacts/${appId}/public/data/mun-chat/messages`);
             const debateStateRef = doc(db, `/artifacts/${appId}/public/data/mun-chat/debateState`);
@@ -225,10 +225,10 @@
                     setDoc(debateStateRef, { debateStarted: false, currentSpeaker: null, pointSpeaker: null, speakerQueue: [], pointRequests: [], debateStartTime: null });
                 }
             });
-            setupActionListeners();
+            setupActionListeners(db);
         }
 
-        function setupPresence() {
+        function setupPresence(rtdb) {
             const myStatusRef = ref(rtdb, `/artifacts/${appId}/public/status/${currentUser.uid}`);
             set(myStatusRef, { role: userRole, online: true });
             onDisconnect(myStatusRef).remove();
@@ -280,7 +280,7 @@
                         const btn = document.createElement('button');
                         btn.textContent = 'Set Speaker';
                         btn.className = 'text-xs bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600';
-                        btn.onclick = () => setSpeaker(uid);
+                        btn.onclick = () => setSpeaker(db, uid);
                         li.appendChild(btn);
                         speakerQueueList.appendChild(li);
                     });
@@ -297,7 +297,7 @@
                         const btn = document.createElement('button');
                         btn.textContent = 'Grant Point';
                         btn.className = 'text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600';
-                        btn.onclick = () => grantPoint(uid);
+                        btn.onclick = () => grantPoint(db, uid);
                         li.appendChild(btn);
                         pointRequestsList.appendChild(li);
                     });
@@ -344,7 +344,7 @@
             chatWindow.scrollTop = chatWindow.scrollHeight;
         }
 
-        async function sendMessage() {
+        async function sendMessage(db) {
             const text = messageInput.value.trim();
             if (text && currentUser) {
                 const messagesRef = collection(db, `/artifacts/${appId}/public/data/mun-chat/messages`);
@@ -358,87 +358,92 @@
             }
         }
         
-        async function handleDbAction(action, errorMessage) {
+        async function handleDbAction(db, action, errorMessage, button) {
+            if (button) button.disabled = true;
             try {
-                await action();
+                await action(db);
             } catch (error) {
                 console.error(errorMessage, error);
-                alert(`${errorMessage}. Check console and Firebase Rules.`);
+                alert(`${errorMessage}. This is likely a Firebase security rule issue. Please check the console for details.`);
+            } finally {
+                if (button) button.disabled = false;
             }
         }
 
         // --- Judge Actions ---
-        function setSpeaker(uid) {
-            handleDbAction(async () => {
+        function setSpeaker(db, uid) {
+            handleDbAction(db, async (db) => {
                 const debateStateRef = doc(db, `/artifacts/${appId}/public/data/mun-chat/debateState`);
                 const messagesRef = collection(db, `/artifacts/${appId}/public/data/mun-chat/messages`);
                 await updateDoc(debateStateRef, { currentSpeaker: uid, speakerQueue: arrayRemove(uid), pointSpeaker: null });
                 await addDoc(messagesRef, { text: `The Judge recognizes Delegate ${uid.substring(0,8)}. You have the floor.`, role: 'system', timestamp: serverTimestamp() });
             }, "Error setting speaker");
         }
-        function grantPoint(uid) {
-            handleDbAction(async () => {
+        function grantPoint(db, uid) {
+            handleDbAction(db, async (db) => {
                 const debateStateRef = doc(db, `/artifacts/${appId}/public/data/mun-chat/debateState`);
                 const messagesRef = collection(db, `/artifacts/${appId}/public/data/mun-chat/messages`);
                 await updateDoc(debateStateRef, { pointSpeaker: uid, pointRequests: arrayRemove(uid) });
                 await addDoc(messagesRef, { text: `The current speaker yields to Delegate ${uid.substring(0,8)} for a point of information.`, role: 'system', timestamp: serverTimestamp() });
             }, "Error granting point");
         }
-        function yieldFloor() {
-            handleDbAction(async () => {
+        function yieldFloor(db) {
+            handleDbAction(db, async (db) => {
                 const debateStateRef = doc(db, `/artifacts/${appId}/public/data/mun-chat/debateState`);
                 const messagesRef = collection(db, `/artifacts/${appId}/public/data/mun-chat/messages`);
                 await updateDoc(debateStateRef, { currentSpeaker: null, pointSpeaker: null });
                 await addDoc(messagesRef, { text: "The floor has been yielded back to the Judge.", role: 'system', timestamp: serverTimestamp() });
-            }, "Error yielding floor");
+            }, "Error yielding floor", document.getElementById('yield-floor-btn'));
         }
 
         // --- Delegate Actions ---
-        function requestToSpeak() {
-            handleDbAction(async () => {
+        function requestToSpeak(db) {
+            handleDbAction(db, async (db) => {
                 const debateStateRef = doc(db, `/artifacts/${appId}/public/data/mun-chat/debateState`);
                 await updateDoc(debateStateRef, { speakerQueue: arrayUnion(currentUser.uid) });
                 alert("You have been added to the speaker queue.");
-            }, "Error requesting to speak");
+            }, "Error requesting to speak", document.getElementById('request-speak-btn'));
         }
-        function requestPoint() {
-            handleDbAction(async () => {
+        function requestPoint(db) {
+            handleDbAction(db, async (db) => {
                 const debateStateRef = doc(db, `/artifacts/${appId}/public/data/mun-chat/debateState`);
                 await updateDoc(debateStateRef, { pointRequests: arrayUnion(currentUser.uid) });
                 alert("Your request for a point of information has been noted.");
-            }, "Error requesting point");
+            }, "Error requesting point", document.getElementById('request-point-btn'));
         }
         
-        function setupActionListeners() {
-            sendButton.addEventListener('click', sendMessage);
+        function setupActionListeners(db) {
+            sendButton.addEventListener('click', () => sendMessage(db));
             messageInput.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    sendMessage();
+                    sendMessage(db);
                 }
             });
 
             if(userRole === 'judge') {
-                document.getElementById('start-debate-btn').addEventListener('click', () => {
-                    handleDbAction(async () => {
+                const startBtn = document.getElementById('start-debate-btn');
+                startBtn.addEventListener('click', () => {
+                    handleDbAction(db, async (db) => {
                         const debateStateRef = doc(db, `/artifacts/${appId}/public/data/mun-chat/debateState`);
                         const messagesRef = collection(db, `/artifacts/${appId}/public/data/mun-chat/messages`);
                         await setDoc(debateStateRef, { debateStarted: true, currentSpeaker: null, pointSpeaker: null, speakerQueue: [], pointRequests: [], debateStartTime: serverTimestamp() });
                         await addDoc(messagesRef, { text: "The Judge has started the debate. Delegates may request to speak.", role: 'system', timestamp: serverTimestamp() });
-                    }, "Error starting debate");
+                    }, "Error starting debate", startBtn);
                 });
-                 document.getElementById('end-debate-btn').addEventListener('click', () => {
-                    handleDbAction(async () => {
+                const endBtn = document.getElementById('end-debate-btn');
+                 endBtn.addEventListener('click', () => {
+                    handleDbAction(db, async (db) => {
                         const debateStateRef = doc(db, `/artifacts/${appId}/public/data/mun-chat/debateState`);
                         const messagesRef = collection(db, `/artifacts/${appId}/public/data/mun-chat/messages`);
                         await updateDoc(debateStateRef, { debateStarted: false, currentSpeaker: null, pointSpeaker: null, debateStartTime: null });
                         await addDoc(messagesRef, { text: "The Judge has ended the debate session.", role: 'system', timestamp: serverTimestamp() });
-                    }, "Error ending debate");
+                    }, "Error ending debate", endBtn);
                 });
-                document.getElementById('yield-floor-btn').addEventListener('click', yieldFloor);
+                document.getElementById('yield-floor-btn').addEventListener('click', () => yieldFloor(db));
             } else {
-                 document.getElementById('request-speak-btn').addEventListener('click', requestToSpeak);
-                 document.getElementById('request-point-btn').addEventListener('click', requestPoint);
+                 document.getElementById('request-speak-btn').addEventListener('click', () => requestToSpeak(db));
+                 document.getElementById('request-point-btn').addEventListener('click', () => requestPoint(db));
             }
         }
         
